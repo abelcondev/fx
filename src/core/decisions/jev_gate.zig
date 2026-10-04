@@ -12,9 +12,8 @@
 //!   off-task or damaging in ways the user did not ask for (at most three
 //!   times per turn).
 //!
-//! `Stop` runs the after-turn checks: the SDD status and TDD green checks,
-//! the Iris screenshot request after visual changes, and, when the turn
-//! changed files in a workspace with decision records and SDD on
+//! `Stop` runs the after-turn checks: the SDD status and TDD green checks and,
+//! when the turn changed files in a workspace with decision records and SDD on
 //! (`fx sdd on`), the drift check, which flags records the uncommitted
 //! changes contradict and asks the agent to update them (each record once
 //! per process). fx does not re-check the final answer against the turn's
@@ -44,7 +43,6 @@ const sdd_layout = @import("../sdd/sdd_layout.zig");
 const sdd_gate = @import("sdd_gate.zig");
 const tdd_gate = @import("tdd_gate.zig");
 const claim_check = @import("claim_check.zig");
-const visual_check = @import("visual_check.zig");
 const scripted_edit = @import("scripted_edit.zig");
 const memory_gate = @import("memory_gate.zig");
 const memory_store = @import("../memory/memory_store.zig");
@@ -85,9 +83,6 @@ pub const Gate = struct {
     /// With `tdd: auto`, Jev's call on whether this turn's change is
     /// test-first; null until the first source change asks.
     tdd_need: ?tdd_gate.Need = null,
-    visual_asked: bool = false,
-    /// The missing-Iris notice was shown in this process.
-    iris_missing_told: bool = false,
     /// The SDD route needs no more checks this turn.
     sdd_settled: bool = false,
     /// Set when this turn routed to change; later file changes re-check the
@@ -166,8 +161,7 @@ pub const Gate = struct {
                 .run = preToolUseHandler,
             });
         }
-        // Iris can be on for a workspace while the profile gate is off,
-        // so the after-turn handler is always registered.
+        // The after-turn checks are always registered.
         try runtime.registerStop(.{
             .name = "fx.jev.after_turn",
             .ctx = self,
@@ -357,7 +351,6 @@ pub const Gate = struct {
         self.tdd_weak_asked = false;
         self.tdd_uncited_asked = false;
         self.tdd_need = null;
-        self.visual_asked = false;
         self.sdd_settled = false;
         self.sdd_change = null;
         self.sdd_incomplete_held = false;
@@ -1028,7 +1021,6 @@ pub const Gate = struct {
             };
             if (specs_action) |action| return action;
         }
-        if (try self.visualAction(input)) |action| return action;
         if (self.config.drift_gate and changedFiles(input.turn_messages) and
             sdd_mode.load(self.alloc, input.invocation.scope.workspace_root).enabled)
         {
@@ -1053,53 +1045,6 @@ pub const Gate = struct {
             return .allow;
         };
         return if (note) |text| .{ .note = text } else .allow;
-    }
-
-    fn visualAction(self: *Gate, input: hooks.StopInput) !?hooks.StopAction {
-        if (!jev_config.irisEnabled(self.alloc, self.config, input.invocation.scope.workspace_root)) return null;
-        return self.checkVisual(input) catch |err| {
-            debug_trace.logf("jev", "visual check failed err={s}", .{@errorName(err)});
-            return null;
-        };
-    }
-
-    /// Once per turn, asks for an Iris screenshot when the turn changed UI
-    /// files after its last capture and Jev judges the change visual.
-    fn checkVisual(self: *Gate, input: hooks.StopInput) !?hooks.StopAction {
-        if (self.visual_asked) return null;
-        var arena_state = std.heap.ArenaAllocator.init(self.alloc);
-        defer arena_state.deinit();
-        const arena = arena_state.allocator();
-        const evidence = try visual_check.scan(arena, input.turn_messages);
-        if (evidence.ui_paths.len == 0 or evidence.captured) return null;
-        self.visual_asked = true;
-        const configured = visual_check.irisConfigured(self.alloc, input.invocation.scope.workspace_root);
-        if (!configured and self.iris_missing_told) return null;
-        var entry = self.newEntry("visual", input.invocation, visual_check.threshold);
-        const state = try visual_check.buildState(self.alloc, input.user_request, evidence);
-        defer self.alloc.free(state);
-        var response = self.consult(&entry, state, &visual_check.questions) orelse return null;
-        defer response.deinit();
-        const p = response.noul(visual_check.visual_id) orelse {
-            self.logIncomplete(&entry, error.IncompleteJevAnswer);
-            return null;
-        };
-        if (p < visual_check.threshold) {
-            entry.outcome = "skip";
-            entry.detail = "not a visual change";
-            decision_log.append(self.alloc, entry);
-            return null;
-        }
-        entry.outcome = "continue";
-        if (!configured) {
-            self.iris_missing_told = true;
-            entry.detail = "iris not configured";
-            decision_log.append(self.alloc, entry);
-            return .{ .continue_once = visual_check.missing_reason };
-        }
-        entry.detail = "capture";
-        decision_log.append(self.alloc, entry);
-        return .{ .continue_once = self.lend(try visual_check.captureReason(self.alloc, evidence, self.config.visual_model)) };
     }
 
     /// A turn that approves the proposal but changes no code (pushing, opening
