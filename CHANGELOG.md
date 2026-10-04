@@ -1,8 +1,17 @@
 # fx
 
-## 0.7.0
+## 0.8.0
 
 <!-- release:start -->
+
+**fx no longer checks the interface with Iris.**
+
+### Breaking Changes
+
+- **No more Iris visual check:** The after-turn screenshot check is gone, along with the `jev.gates.visual` and `jev.visual.model` settings and the per-project `workspaces["<path>"].iris` switch. `fx jev iris on|off`, `/jev iris on|off` and `fx jev eval visual` are no longer accepted, and `fx jev full` now adds only the plan and drift checks. Settings that still carry the old keys keep working; fx ignores them.
+<!-- release:end -->
+
+## 0.7.0
 
 **fx lite: Jev now only steps in where it saves time, so turns finish faster.**
 
@@ -22,8 +31,6 @@
 ### Improvements
 
 - **Fewer failed shell calls:** Fields such as `timeout_ms` sent next to `request` instead of inside it now run instead of failing. A `yield_time_ms` above 30 seconds is capped, and a `shell` choice without a terminal falls back to the default shell. Each of these used to cost a model round.
-<!-- release:end -->
-
 ## 0.6.0
 
 **Jev now decides more of the work: when a change needs a test first, when to commit, when a pull request needs a review, and what to remember.**
