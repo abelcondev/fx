@@ -6,9 +6,8 @@
 //!
 //! `mode` picks the gate defaults. `lite` (the default) keeps the checks
 //! that save a model round (ask, SDD routing, scripted edits, memory) and
-//! turns off the ones that cost one (plan, drift, Iris). `full` turns those
-//! on. Explicit `gates` entries override either preset. Iris can also be
-//! switched per workspace with `workspaces["<root>"].iris`. The API key comes from
+//! turns off the ones that cost one (plan, drift). `full` turns those
+//! on. Explicit `gates` entries override either preset. The API key comes from
 //! `TYPESAFE_API_KEY` or the key saved with `fx jev key`.
 //!
 //! ```json
@@ -70,12 +69,6 @@ pub const Config = struct {
     /// With SDD on, route the first file change of a turn to fix, spec or
     /// change (`sdd_gate.zig`).
     sdd_gate: bool = true,
-    /// After a turn that changed how a UI looks, ask for an Iris screenshot
-    /// (`visual_check.zig`).
-    visual_gate: bool = false,
-    /// Vision model for a subagent that reads the screenshot when the
-    /// session's model cannot (`jev.visual.model`).
-    visual_model: ?[]const u8 = null,
     /// Hold a shell command that rewrites a few files in place when
     /// `edit_file` fits better (`scripted_edit.zig`).
     edits_gate: bool = true,
@@ -90,10 +83,8 @@ pub const Config = struct {
     routes: []routing.Route = &.{},
     owned_model: ?[]u8 = null,
     owned_base_url: ?[]u8 = null,
-    owned_visual_model: ?[]u8 = null,
 
     pub fn deinit(self: *Config, alloc: Allocator) void {
-        if (self.owned_visual_model) |value| alloc.free(value);
         if (self.owned_model) |value| alloc.free(value);
         if (self.owned_base_url) |value| alloc.free(value);
         freeRoutes(alloc, self.routes);
@@ -111,7 +102,6 @@ pub const Config = struct {
         const full = mode == .full;
         self.plan_gate = full;
         self.drift_gate = full;
-        self.visual_gate = full;
     }
 
     fn setModel(self: *Config, alloc: Allocator, value: []const u8) !void {
@@ -162,9 +152,6 @@ pub fn applyJson(alloc: Allocator, config: *Config, value: std.json.Value) !void
             if (gates.object.get("sdd")) |sdd| {
                 if (sdd == .bool) config.sdd_gate = sdd.bool;
             }
-            if (gates.object.get("visual")) |visual| {
-                if (visual == .bool) config.visual_gate = visual.bool;
-            }
             if (gates.object.get("edits")) |edits| {
                 if (edits == .bool) config.edits_gate = edits.bool;
             }
@@ -183,18 +170,6 @@ pub fn applyJson(alloc: Allocator, config: *Config, value: std.json.Value) !void
             }
             if (thresholds.object.get("action")) |action| {
                 if (threshold(action)) |parsed| config.action_threshold = parsed;
-            }
-        }
-    }
-    if (object.get("visual")) |visual| {
-        if (visual == .object) {
-            if (visual.object.get("model")) |model| {
-                if (model == .string and validText(model.string)) {
-                    const owned = try alloc.dupe(u8, model.string);
-                    if (config.owned_visual_model) |old| alloc.free(old);
-                    config.owned_visual_model = owned;
-                    config.visual_model = owned;
-                }
             }
         }
     }
@@ -337,29 +312,6 @@ pub fn load(alloc: Allocator) !Config {
     return config;
 }
 
-/// Whether the Iris check runs in `workspace_root`:
-/// `workspaces["<root>"].iris` when set, otherwise the `visual` gate.
-pub fn irisEnabled(alloc: Allocator, config: Config, workspace_root: []const u8) bool {
-    const home = io_mod.getenv("HOME") orelse return config.visual_gate;
-    const bytes = readSettings(alloc, home) orelse return config.visual_gate;
-    defer alloc.free(bytes);
-    var parsed = std.json.parseFromSlice(std.json.Value, alloc, bytes, .{}) catch return config.visual_gate;
-    defer parsed.deinit();
-    return workspaceIris(parsed.value, workspace_root) orelse config.visual_gate;
-}
-
-fn workspaceIris(settings: std.json.Value, workspace_root: []const u8) ?bool {
-    if (settings != .object) return null;
-    const workspaces = settings.object.get("workspaces") orelse return null;
-    if (workspaces != .object) return null;
-    var root = workspace_root;
-    while (root.len > 1 and root[root.len - 1] == '/') root = root[0 .. root.len - 1];
-    const workspace = workspaces.object.get(root) orelse return null;
-    if (workspace != .object) return null;
-    const iris = workspace.object.get("iris") orelse return null;
-    return if (iris == .bool) iris.bool else null;
-}
-
 fn readSettings(alloc: Allocator, home: []const u8) ?[]u8 {
     const path = profile_paths.settingsPath(alloc, home) catch return null;
     defer alloc.free(path);
@@ -402,7 +354,6 @@ test "applyJson reads the jev settings object and ignores invalid fields" {
     try std.testing.expectEqualStrings("jev-1.13.0", config.model);
     try std.testing.expectEqualStrings(typesafe.default_base_url, config.base_url);
     // Retired gates in old settings are ignored.
-    try std.testing.expect(!config.visual_gate);
     try std.testing.expect(!config.plan_gate);
     try std.testing.expectEqual(@as(f64, 0.6), config.plan_threshold);
 
@@ -476,7 +427,7 @@ test "mode presets set the costly gates and explicit gates win" {
     var lite = Config{};
     defer lite.deinit(alloc);
     try std.testing.expectEqual(Mode.lite, lite.mode);
-    try std.testing.expect(!lite.plan_gate and !lite.drift_gate and !lite.visual_gate);
+    try std.testing.expect(!lite.plan_gate and !lite.drift_gate);
     try std.testing.expect(lite.ask_gate and lite.sdd_gate and lite.edits_gate and lite.memory_gate);
 
     var parsed = try std.json.parseFromSlice(std.json.Value, alloc,
@@ -487,16 +438,5 @@ test "mode presets set the costly gates and explicit gates win" {
     defer full.deinit(alloc);
     try applyJson(alloc, &full, parsed.value);
     try std.testing.expectEqual(Mode.full, full.mode);
-    try std.testing.expect(full.plan_gate and full.visual_gate and !full.drift_gate);
-}
-
-test "workspace iris overrides the visual gate" {
-    const alloc = std.testing.allocator;
-    var parsed = try std.json.parseFromSlice(std.json.Value, alloc,
-        \\{"workspaces":{"/repo":{"iris":true},"/other":{"iris":"yes"}}}
-    , .{});
-    defer parsed.deinit();
-    try std.testing.expectEqual(@as(?bool, true), workspaceIris(parsed.value, "/repo/"));
-    try std.testing.expect(workspaceIris(parsed.value, "/other") == null);
-    try std.testing.expect(workspaceIris(parsed.value, "/none") == null);
+    try std.testing.expect(full.plan_gate and !full.drift_gate);
 }

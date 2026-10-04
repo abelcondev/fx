@@ -91,14 +91,12 @@ pub const ProjectMcpMutation = struct {
     action: project_config.ProjectMcpAction,
 };
 
-/// Writes `workspaces["<root>"].sdd.enabled` and `.tdd`, and the
-/// workspace's Iris switch `workspaces["<root>"].iris`.
+/// Writes `workspaces["<root>"].sdd.enabled` and `.tdd`.
 pub const WorkspaceSddMutation = struct {
     workspace_root: []const u8,
     enabled: ?bool = null,
     /// `off`, `auto`, `on` or `strict`.
     tdd: ?[]const u8 = null,
-    iris: ?bool = null,
 };
 
 pub const UserSettingsPatch = struct {
@@ -1020,10 +1018,7 @@ test "workspace sdd mutation writes only that workspace's sdd switch" {
     try std.testing.expect(sdd.get("enabled").?.bool);
     try std.testing.expectError(error.InvalidDurableField, validateMutation(.{ .workspace_sdd = .{ .workspace_root = "/repo", .tdd = "always" } }));
 
-    const iris = try applyWorkspaceSddMutationToRoot(arena.allocator(), &root, .{ .workspace_root = "/repo", .iris = false });
-    try std.testing.expect(iris.changed);
     const repo = root.object.get("workspaces").?.object.get("/repo").?.object;
-    try std.testing.expect(!repo.get("iris").?.bool);
     try std.testing.expectEqualStrings("strict", repo.get("sdd").?.object.get("tdd").?.string);
 }
 
@@ -1569,7 +1564,6 @@ fn applyWorkspaceSddMutationToRoot(
 ) !PatchApplication {
     const workspace = try workspaceObject(arena, root, mutation.workspace_root);
     var changed = false;
-    if (mutation.iris) |iris| changed = try putBool(arena, workspace, "iris", iris) or changed;
     if (mutation.enabled == null and mutation.tdd == null) return .{ .changed = changed };
     var sdd = if (workspace.getPtr("sdd")) |value| blk: {
         if (value.* != .object) return error.InvalidSettingsFormat;

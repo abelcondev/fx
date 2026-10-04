@@ -4399,7 +4399,6 @@ test {
     _ = @import("core/decisions/sdd_gate.zig");
     _ = @import("core/decisions/tdd_gate.zig");
     _ = @import("core/decisions/claim_check.zig");
-    _ = @import("core/decisions/visual_check.zig");
     _ = @import("core/decisions/scripted_edit.zig");
     _ = @import("core/memory/memory_store.zig");
     _ = @import("core/decisions/memory_gate.zig");

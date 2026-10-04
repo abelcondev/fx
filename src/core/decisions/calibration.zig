@@ -17,7 +17,6 @@ const routing = @import("routing.zig");
 const sdd_gate = @import("sdd_gate.zig");
 const tdd_gate = @import("tdd_gate.zig");
 const sdd_layout = @import("../sdd/sdd_layout.zig");
-const visual_check = @import("visual_check.zig");
 const drift = @import("drift.zig");
 const scripted_edit = @import("scripted_edit.zig");
 const memory_gate = @import("memory_gate.zig");
@@ -25,7 +24,7 @@ const memory_gate = @import("memory_gate.zig");
 const Allocator = std.mem.Allocator;
 const ChatMessage = types.ChatMessage;
 
-pub const Gate = enum { plan, action, ask, routing, sdd, close, tdd, visual, drift, edits, memory };
+pub const Gate = enum { plan, action, ask, routing, sdd, close, tdd, drift, edits, memory };
 
 const Case = struct {
     gate: Gate,
@@ -53,11 +52,6 @@ fn toolTurn(comptime id: []const u8, comptime tool: []const u8, comptime args: [
     };
 }
 
-const centered_date = toolTurn("c1", "edit_file", "{\"path\":\"src/components/tickets/MinistryBoletoFields.tsx\",\"old_string\":\"<div className=\\\"flex flex-wrap items-center gap-3\\\">\",\"new_string\":\"<div className=\\\"flex items-center\\\"><div className=\\\"min-w-0 flex-1 text-center\\\">\"}", .success, "Edited");
-const moved_section = toolTurn("c1", "edit_file", "{\"path\":\"src/components/booking/BookingDetail.tsx\",\"old_string\":\"<BookingTrenes bookingId={bookingId} />\",\"new_string\":\"<BookingTrenes bookingId={bookingId} />\\n<BookingMinisterio bookingId={bookingId} />\"}", .success, "Edited");
-const saved_notes = toolTurn("c1", "edit_file", "{\"path\":\"src/components/booking/CreateBookingSheet.tsx\",\"old_string\":\"const patch = ministryVentaPatch({ boleto1, boleto2 });\",\"new_string\":\"const patch = ministryVentaPatch({ boleto1, boleto2, notes });\"}", .success, "Edited");
-const renamed_prop = toolTurn("c1", "edit_file", "{\"path\":\"src/components/booking/BookingMinisterio.tsx\",\"old_string\":\"const tickets = useMinistryTickets(bookingId);\",\"new_string\":\"const ministryTickets = useMinistryTickets(bookingId);\"}", .success, "Edited");
-const badge_text = toolTurn("c1", "edit_file", "{\"path\":\"src/components/tickets/MinistryBoletoFields.tsx\",\"old_string\":\"<Badge tone=\\\"teal\\\">Registrado</Badge>\",\"new_string\":\"<Badge tone=\\\"teal\\\"><CheckIcon strokeWidth={3} /> Registrado</Badge>\"}", .success, "Edited");
 const coverage_rules = [_]sdd_layout.Rule{.{ .capability = "ministerio", .title = "Cobertura", .body = "La reserva tiene cobertura de Ministerio (✓) cuando tiene una fila de ministryTickets no borrada." }};
 const coverage_diff =
     \\--- a/src/lib/ministryRegistry.ts
@@ -109,12 +103,6 @@ const review_request = "Implemented and verified: bun test 284 pass, build OK. I
 const pagos_proposal = "# Pagos parciales\n\n## Why\nAgencies collect in installments.\n\n## What\n- New payment_plans table with installments per booking\n- A Plan de pagos panel in the booking detail\n\n## Tasks\n- [ ] Schema\n- [ ] Panel";
 
 pub const cases = [_]Case{
-    // Visual check.
-    .{ .gate = .visual, .name = "center the date", .expect = "visual", .user_request = "puedes alinear la fecha al centro horizontal", .messages = &centered_date },
-    .{ .gate = .visual, .name = "move a section", .expect = "visual", .user_request = "pon la seccion Ministerio debajo de la seccion Trenes", .messages = &moved_section },
-    .{ .gate = .visual, .name = "bold check in the badge", .expect = "visual", .user_request = "en el badge 'Registrado' que vaya con un icono check bold", .messages = &badge_text },
-    .{ .gate = .visual, .name = "persist the comment", .expect = "skip", .user_request = "el comentario del step de ministerio no se guarda, arreglalo", .messages = &saved_notes },
-    .{ .gate = .visual, .name = "rename a variable", .expect = "skip", .user_request = "renombra tickets a ministryTickets en BookingMinisterio", .messages = &renamed_prop },
     // Drift direction: which side to change when a turn contradicts a rule.
     .{ .gate = .drift, .name = "coverage now needs the real boleto", .expect = "update_record", .user_request = "la cobertura tiene que marcar check solo cuando hay boleto real registrado por el rol Reservas", .rules = &coverage_rules, .diff = coverage_diff },
     .{ .gate = .drift, .name = "comments added, booking selector dropped", .expect = "ask_user", .user_request = "en la edicion de Ministerio agrega el campo Comentarios", .rules = &edit_sheet_rules, .diff = edit_sheet_diff },
@@ -251,10 +239,6 @@ pub fn run(arena: Allocator, config: jev_config.Config, api_key: []const u8, cas
             questions = try sdd_gate.questions(arena, case.rules.len, case.proposal != null);
             state = try sdd_gate.buildState(arena, sddInput(case));
         },
-        .visual => {
-            questions = &visual_check.questions;
-            state = try visual_check.buildState(arena, case.user_request, try visual_check.scan(arena, case.messages));
-        },
         .drift => {
             const decisions = [_]drift.Decision{drift.ruleDecision("spec.md", case.rules[0])};
             questions = try drift.contradictionQuestions(arena, 1, true);
@@ -298,7 +282,6 @@ pub fn run(arena: Allocator, config: jev_config.Config, api_key: []const u8, cas
             (if (v.approves) "approved" else if (v.bug and v.route == .fix) "fix+bug" else @tagName(v.route))
         else |err|
             @errorName(err),
-        .visual => if (response.noul(visual_check.visual_id)) |p| (if (p >= visual_check.threshold) "visual" else "skip") else "IncompleteJevAnswer",
         .drift => if (drift.contradiction(&response, 0)) |p|
             (if (p < drift.contradiction_threshold) "no_contradiction" else @tagName(drift.Direction.of(drift.originFor(&response, 0))))
         else

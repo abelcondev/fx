@@ -3910,7 +3910,7 @@ fn parseSoundLevel(value: []const u8) ?SoundLevel {
     return null;
 }
 
-const JevCommand = enum { status, on, off, lite, full, iris_on, iris_off };
+const JevCommand = enum { status, on, off, lite, full };
 
 fn parseJevCommand(rest: []const u8) ?JevCommand {
     const arg = std.mem.trim(u8, rest, " \t");
@@ -3919,21 +3919,15 @@ fn parseJevCommand(rest: []const u8) ?JevCommand {
     if (std.mem.eql(u8, arg, "off")) return .off;
     if (std.mem.eql(u8, arg, "lite")) return .lite;
     if (std.mem.eql(u8, arg, "full")) return .full;
-    if (std.mem.startsWith(u8, arg, "iris")) {
-        const rest_word = std.mem.trim(u8, arg["iris".len..], " \t");
-        const enabled = jev_cli.parseSwitch(rest_word) orelse return null;
-        return if (enabled) .iris_on else .iris_off;
-    }
     return null;
 }
 
 /// `/jev` shows Jev's status; `/jev on|off` saves `jev.enabled` and applies it
 /// to this session when its handlers were registered at startup; `/jev
-/// lite|full` saves `jev.mode` for new sessions; `/jev iris on|off` saves the
-/// workspace's Iris switch, read at each turn end.
+/// lite|full` saves `jev.mode` for new sessions.
 fn handleJevCommand(app: anytype, rest: []const u8) !void {
     const command = parseJevCommand(rest) orelse {
-        try app.writeDomainNotice(.{ .topic = "", .tone = .@"error", .body = "usage: /jev [on|off|lite|full|iris on|off]" }, true);
+        try app.writeDomainNotice(.{ .topic = "", .tone = .@"error", .body = "usage: /jev [on|off|lite|full]" }, true);
         return;
     };
     switch (command) {
@@ -3946,24 +3940,6 @@ fn handleJevCommand(app: anytype, rest: []const u8) !void {
             };
             outcome.deinit(app.alloc);
             const body = if (command == .lite) "Jev mode is lite for new sessions." else "Jev mode is full for new sessions.";
-            try app.writeDomainNotice(.{ .topic = "jev", .tone = .success, .body = body }, true);
-            return;
-        },
-        .iris_on, .iris_off => {
-            const workspace_root: []const u8 = if (comptime @hasField(@TypeOf(app.*), "workspace_root")) app.workspace_root else "";
-            if (workspace_root.len == 0) {
-                try app.writeDomainNotice(.{ .topic = "jev", .tone = .@"error", .body = "No workspace is open." }, true);
-                return;
-            }
-            const enable = command == .iris_on;
-            var outcome = config_runtime.setWorkspaceIris(app.alloc, workspace_root, enable) catch |err| {
-                const body = try std.fmt.allocPrint(app.alloc, "Could not save Jev settings: {s}", .{@errorName(err)});
-                defer app.alloc.free(body);
-                try app.writeDomainNotice(.{ .topic = "jev", .tone = .@"error", .body = body }, true);
-                return;
-            };
-            outcome.deinit(app.alloc);
-            const body = if (enable) "Iris checks are on for this workspace." else "Iris checks are off for this workspace.";
             try app.writeDomainNotice(.{ .topic = "jev", .tone = .success, .body = body }, true);
             return;
         },
@@ -4092,8 +4068,6 @@ test "parseJevCommand accepts status, on and off" {
     try std.testing.expectEqual(JevCommand.off, parseJevCommand("off").?);
     try std.testing.expect(parseJevCommand("maybe") == null);
     try std.testing.expectEqual(JevCommand.lite, parseJevCommand("lite").?);
-    try std.testing.expectEqual(JevCommand.iris_off, parseJevCommand("iris  off").?);
-    try std.testing.expect(parseJevCommand("iris") == null);
 }
 
 fn handleNotificationsCommand(app: anytype, rest: []const u8) !void {

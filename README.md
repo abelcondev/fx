@@ -36,7 +36,7 @@ independiente que mantiene al agente honesto.
   subagentes en otros agentes.
 - **Liviano por defecto.** Jev (opcional) solo interviene donde ahorra una vuelta
   del modelo: responde preguntas que el código ya resuelve y frena ediciones
-  con scripts frágiles. Los chequeos que cuestan una vuelta (plan, drift, Iris)
+  con scripts frágiles. Los chequeos que cuestan una vuelta (plan, drift)
   se activan con `fx jev full` o por proyecto.
 - **Specs siempre al día.** SDD (opcional) mantiene una carpeta `sdd/` liviana
   con reglas y propuestas de cambio, y avisa cuando el código las contradice.
@@ -217,7 +217,7 @@ ahorran tiempo; **`full`** suma los que cuestan una vuelta más del modelo:
 
 ```bash
 fx jev lite      # por defecto
-fx jev full      # suma plan, drift e Iris
+fx jev full      # suma plan y drift
 ```
 
 En palabras simples (la columna indica el valor en `lite`):
@@ -228,7 +228,6 @@ En palabras simples (la columna indica el valor en `lite`):
 | **Ask** | Que te pregunte cosas que el código ya responde (por ejemplo, una versión fijada). Las preferencias te siguen llegando a ti. | activo |
 | **Drift** | Specs y registros de decisiones desactualizados tras un cambio. Jev también decide qué lado corregir: si tu pedido pidió ese cambio, se actualiza la spec; si vino de arrastre, se arregla el código (sin tocar cambios tuyos previos sin commitear); si no está claro, el agente te pregunta. Solo con SDD activo. | inactivo (activo en `full`) |
 | **Ruteo SDD** | Cambios grandes sin propuesta. Solo con SDD activo. | activo |
-| **Visual** | Dar por bueno un cambio de interfaz sin mirarlo. Si el turno cambió archivos de UI y Jev juzga que el cambio se ve en pantalla, el agente saca una captura con [Iris](https://github.com/brijr/iris) y la compara con el pedido. Sin Iris configurado, fx avisa una vez que se saltó el chequeo. Se prende o apaga por proyecto con `fx jev iris on\|off`. | inactivo (activo en `full`) |
 | **Edits** | Editar unos pocos archivos con `sed -i`, `perl -pi` o un script de Python, que se saltean el chequeo exacto de `edit_file` y pueden cortar código sin que se note. Si Jev ve un cambio puntual, se frena una vez por turno para usar `edit_file`; los renombres mecánicos en muchos archivos, o un script que pediste, pasan. | activo |
 | **Action** | Borrar, sobrescribir, publicar o salir del proyecto sin que lo pidas. Suma ~0,5 s por llamada. | inactivo |
 | **Routing** | Usar un modelo caro para una tarea trivial de un subagente. | inactivo |
@@ -254,8 +253,8 @@ fx jev           # estado: modo, chequeos, umbrales, origen de la key
 fx jev off       # lo desactiva
 ```
 
-Dentro de una sesión, `/jev on`, `/jev off`, `/jev lite`, `/jev full` y
-`/jev iris on|off` hacen lo mismo y guardan la elección.
+Dentro de una sesión, `/jev on`, `/jev off`, `/jev lite` y `/jev full` hacen lo
+mismo y guardan la elección.
 
 **Opcional: ruteo de modelos.** Deja que Jev elija el modelo del subagente
 según la tarea:
@@ -269,29 +268,6 @@ según la tarea:
   }
 }
 ```
-
-**Opcional: verificación visual con Iris.** Iris es una herramienta aparte
-que saca capturas con tu Chrome. Instálala siguiendo su README y regístrala como
-servidor MCP llamado `iris` en `~/.fx/mcp.json`:
-
-```json
-"mcp": {
-  "iris": { "type": "local", "command": ["iris", "mcp"], "enabled": true }
-}
-```
-
-Después, actívala en los proyectos donde la quieras (en `full` ya viene activa
-y se puede apagar por proyecto):
-
-```bash
-fx jev iris on   # guarda workspaces["<ruta>"].iris para este proyecto
-fx jev iris off
-```
-
-Iris no inicia sesión ni hace clics, así que conviene capturar el servidor de
-desarrollo o una ruta de preview solo de desarrollo con datos de ejemplo. Si el
-modelo de la sesión no lee imágenes, `"jev": { "visual": { "model": "<modelo con visión>" } }`
-hace que un subagente mire la captura.
 
 **Opcional: drift en CI.** `fx jev drift [<rango-git>]` compara un diff con tus
 specs o registros de decisiones y termina con error si alguno puede estar
@@ -550,14 +526,12 @@ Dentro de `jev` en `~/.fx/settings.json`:
 | Campo | Significado |
 | --- | --- |
 | `enabled` | Activa las decisiones de Jev (por defecto `false`) |
-| `mode` | `lite` (por defecto) o `full`; define los valores por defecto de `gates.plan`, `gates.drift` y `gates.visual` |
+| `mode` | `lite` (por defecto) o `full`; define los valores por defecto de `gates.plan` y `gates.drift` |
 | `model` | Modelo de Jev (por defecto `jev-latest`) |
 | `gates.ask` | Deja que Jev responda preguntas que el contexto ya resuelve (por defecto `true`) |
 | `gates.plan` | Exige un plan antes de cambios en pedidos grandes (`false` en `lite`, `true` en `full`) |
 | `gates.drift` | Marca registros de decisiones que el cambio contradice (`false` en `lite`, `true` en `full`) |
 | `gates.sdd` | Con SDD activo, clasifica el primer cambio como fix, spec o change (por defecto `true`) |
-| `gates.visual` | Pide una captura con Iris después de cambios visuales (`false` en `lite`, `true` en `full`); `workspaces["<ruta>"].iris` lo sobrescribe por proyecto |
-| `visual.model` | Modelo con visión para un subagente que mira la captura cuando el modelo de la sesión no lee imágenes |
 | `gates.edits` | Frena ediciones puntuales hechas con scripts para usar `edit_file` (por defecto `true`) |
 | `gates.memory` | Revisa que un hecho nuevo de memoria valga la pena y no repita otro (por defecto `true`) |
 | `gates.action` | Revisa cambios de archivos y comandos de shell (por defecto `false`) |
@@ -578,7 +552,7 @@ archivo Markdown por decisión en `sdd/decisions`, `docs/decisions`, `docs/adr`
 o `decisions` (front matter `title`/`status`/`description` opcional). Cada
 registro se marca una vez por sesión.
 
-`fx jev eval [plan|action|ask|routing|sdd|close|tdd|visual|drift|edits|memory]` corre casos etiquetados con las
+`fx jev eval [plan|action|ask|routing|sdd|close|tdd|drift|edits|memory]` corre casos etiquetados con las
 mismas preguntas y umbrales que los chequeos reales, para probar cambios de
 umbral o de modelo antes de usarlos.
 
