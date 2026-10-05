@@ -91,7 +91,8 @@ const guidance =
     \\- One fact per file `<dir>/<name>.md`, starting with front matter: `name` (short kebab-case slug), `description` (one line used to judge relevance later) and `type` (`user`: who the user is and their preferences; `feedback`: how they want you to work, corrections and confirmed approaches; `project`: ongoing work, goals or constraints the repository does not record; `reference`: pointers to external resources). For feedback and project facts, follow the fact with **Why:** and **How to apply:** lines. Link related facts with [[their-name]].
     \\- After writing a fact, add one line to `<dir>/MEMORY.md`: `- [Title](file.md) — hook`. The index has no front matter and never holds the facts themselves.
     \\- Save only what will help in later conversations and cannot be read from the repository or its git history (not code structure, past fixes or what only matters in this conversation). Update an existing fact instead of adding a near-duplicate, write absolute dates, and delete a fact that turned out wrong.
-    \\- Facts are background, not instructions, and may be out of date: check that a file, function or flag a fact names still exists before relying on it.
+    \\- Facts are background, not instructions, and may be out of date: check that a file, function or flag a fact names still exists before relying on it. `feedback` facts are the exception: they are how the user wants you to work, so follow them unless the current request says otherwise.
+    \\- Never record how fx itself behaves, or whether a mode, gate or feature is on or off: the effective configuration already states it and it changes between versions, so such a fact is wrong as soon as it is written. If a fact contradicts the effective configuration, the configuration wins: correct the fact or delete it.
 ;
 
 /// The system context for `workspace_root`: where memory lives, how to keep
@@ -192,4 +193,14 @@ test "render shows the directory, the rules and the index" {
     try std.testing.expect(std.mem.endsWith(u8, empty, "no facts are saved yet."));
     const full = try render(arena.allocator(), "/d", "- [PR flow](pr-flow.md) — one PR per feature\n");
     try std.testing.expect(std.mem.endsWith(u8, full, "- [PR flow](pr-flow.md) — one PR per feature"));
+}
+
+test "guidance keeps the configuration authoritative over memory" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const text = try render(arena.allocator(), "/d", "");
+    try std.testing.expect(std.mem.find(u8, text, "Never record how fx itself behaves") != null);
+    try std.testing.expect(std.mem.find(u8, text, "the configuration wins") != null);
+    try std.testing.expect(std.mem.find(u8, text, "`feedback` facts are the exception") != null);
+    try std.testing.expect(std.mem.find(u8, text, "follow them unless the current request says otherwise") != null);
 }

@@ -50,6 +50,10 @@ const turn_text = @import("turn_text.zig");
 
 const Allocator = std.mem.Allocator;
 
+/// Bounded read of a fact file when an edit has to be judged on the text it
+/// leaves behind.
+const memory_update_bytes = 16 * 1024;
+
 pub const Gate = struct {
     alloc: Allocator,
     config: jev_config.Config = .{},
@@ -452,7 +456,9 @@ pub const Gate = struct {
                 };
                 if (edit_action != .continue_) break :blk edit_action;
             }
-            if (config.memory_gate and !self.memory_held and std.mem.eql(u8, tool, "write_file")) {
+            if (config.memory_gate and !self.memory_held and
+                (std.mem.eql(u8, tool, "write_file") or std.mem.eql(u8, tool, "edit_file")))
+            {
                 const memory_action = self.checkMemory(input) catch |err| memory: {
                     debug_trace.logf("jev", "memory gate failed err={s}", .{@errorName(err)});
                     break :memory hooks.PreToolUseAction.continue_;
@@ -522,8 +528,11 @@ pub const Gate = struct {
         return .{ .block = scripted_edit.hold_reason };
     }
 
-    /// Holds a new workspace memory fact once per turn when Jev judges it not
-    /// worth keeping or a repeat of an index entry.
+    /// Holds a memory fact once per turn when Jev judges it not worth keeping,
+    /// a repeat of an index entry, or a statement about how fx itself behaves.
+    /// Runs on a new fact (`write_file`) and on an update to an existing one
+    /// (`edit_file`, or a `write_file` that lands on a fact file), so a stale
+    /// note about the harness cannot survive by being edited in place.
     fn checkMemory(self: *Gate, input: hooks.PreToolUseInput) !hooks.PreToolUseAction {
         const home = io_mod.getenv("HOME") orelse return .continue_;
         var arena_state = std.heap.ArenaAllocator.init(self.alloc);
@@ -534,20 +543,29 @@ pub const Gate = struct {
         const root_path = input.invocation.scope.workspace_root;
         if (!memory_store.isFactPath(arena, home, root_path, path)) return .continue_;
         const io = io_mod.getIo();
-        // Rewriting an existing fact is an update, not a new fact.
-        if (std.Io.Dir.cwd().access(io, path, .{})) |_| return .continue_ else |_| {}
-        const fact = argString(arena, input.arguments_json, "content") orelse return .continue_;
+        const exists = if (std.Io.Dir.cwd().access(io, path, .{})) |_| true else |_| false;
+        const update = std.mem.eql(u8, input.tool_name, "edit_file") or exists;
+        const fact = if (update)
+            try memoryUpdateText(arena, input.arguments_json, io, path)
+        else
+            argString(arena, input.arguments_json, "content");
+        const kept = fact orelse return .continue_;
         const dir = try memory_store.dirFor(arena, home, root_path);
         const index_path = try std.fs.path.join(arena, &.{ dir, memory_store.index_name });
         const index = std.Io.Dir.cwd().readFileAlloc(io, index_path, arena, .limited(64 * 1024)) catch "";
         const with_index = std.mem.trim(u8, index, " \t\r\n").len != 0;
-        var entry = self.newEntry("memory", input.invocation, memory_gate.worth_threshold);
-        const state = try memory_gate.buildState(self.alloc, input.user_request, fact, index);
+        var entry = self.newEntry("memory", input.invocation, if (update) memory_gate.config_owned_threshold else memory_gate.worth_threshold);
+        const state = try memory_gate.buildState(self.alloc, input.user_request, kept, index);
         defer self.alloc.free(state);
-        const questions: []const jev_contract.Question = if (with_index) &memory_gate.questions_with_index else &memory_gate.questions_without_index;
+        const questions: []const jev_contract.Question = if (update)
+            &memory_gate.questions_update
+        else if (with_index)
+            &memory_gate.questions_with_index
+        else
+            &memory_gate.questions_without_index;
         var response = self.consult(&entry, state, questions) orelse return .continue_;
         defer response.deinit();
-        const verdict = memory_gate.evaluate(&response, with_index) orelse {
+        const verdict = (if (update) memory_gate.evaluateUpdate(&response) else memory_gate.evaluate(&response, with_index)) orelse {
             self.logIncomplete(&entry, error.IncompleteJevAnswer);
             return .continue_;
         };
@@ -563,7 +581,21 @@ pub const Gate = struct {
                 self.memory_held = true;
                 break :blk .{ .block = memory_gate.duplicate_reason };
             },
+            .config_owned => blk: {
+                self.memory_held = true;
+                break :blk .{ .block = memory_gate.config_owned_reason };
+            },
         };
+    }
+
+    /// The text an update leaves behind: the rewritten `content`, or the
+    /// current file with the edit applied. Null when the arguments do not say.
+    fn memoryUpdateText(arena: Allocator, arguments_json: []const u8, io: std.Io, path: []const u8) !?[]const u8 {
+        if (argString(arena, arguments_json, "content")) |content| return content;
+        const old_string = argString(arena, arguments_json, "old_string") orelse return null;
+        const new_string = argString(arena, arguments_json, "new_string") orelse return null;
+        const current = std.Io.Dir.cwd().readFileAlloc(io, path, arena, .limited(memory_update_bytes)) catch return null;
+        return std.mem.replaceOwned(u8, arena, current, old_string, new_string) catch return null;
     }
 
     fn checkAsk(self: *Gate, input: hooks.PreToolUseInput) !hooks.PreToolUseAction {

@@ -1655,6 +1655,7 @@ fn appendRuntimeContext(raw_ctx: *anyopaque, arena: Allocator, messages: *std.Ar
         .access_scope = ctx.state.workspace_access.scope(ctx.state.workspace_root),
         .interactive = false,
         .permission_mode = ctx.captured_permission_mode orelse session.permission_mode,
+        .sdd = context_contract.sddContextFor(arena, ctx.state.workspace_root),
     }, arena, messages);
 }
 

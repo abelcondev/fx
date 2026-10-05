@@ -551,6 +551,7 @@ fn appendRuntimeContext(raw: *anyopaque, arena: Allocator, messages: *std.ArrayL
         .access_scope = tool_ctx.access_scope,
         .interactive = false,
         .permission_mode = context.admission.permission_mode,
+        .sdd = context_contract.sddContextFor(arena, tool_ctx.workspace_root),
     }, arena, messages);
 }
 

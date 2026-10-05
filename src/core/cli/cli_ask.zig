@@ -2392,6 +2392,7 @@ fn appendRuntimeContext(raw_ctx: *anyopaque, arena: Allocator, messages: *std.Ar
         .access_scope = ctx.workspace_access.scope(ctx.workspace_root),
         .interactive = false,
         .permission_mode = ctx.permission_mode,
+        .sdd = context_contract.sddContextFor(arena, ctx.workspace_root),
         .stale_shell_handles = ctx.session.has_stale_shell_handles,
     }, arena, messages);
 }

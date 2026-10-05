@@ -179,6 +179,52 @@ test "a PreToolUse hold is labeled held" {
     try std.testing.expectEqualStrings("Failed", try subagentFailureLabel(alloc, call, "{\"error\":{\"type\":\"tool_execution_failed\",\"message\":\"x\"}}"));
 }
 
+/// The row label for a call that never ran. A PreToolUse hold names the handler
+/// whose reason the user can open (`Held · SDD TDD`); every other failure keeps
+/// `subagentFailureLabel`.
+pub fn heldRowLabel(alloc: Allocator, call: ToolCall, output: []const u8) Allocator.Error![]const u8 {
+    if (!tool_result_errors.isPreToolUseBlockedOutput(output)) return subagentFailureLabel(alloc, call, output);
+    const handler = (try blockHandlerLabel(alloc, output)) orelse return "Held";
+    defer alloc.free(handler);
+    return std.fmt.allocPrint(alloc, "Held · {s}", .{handler});
+}
+
+/// The handler name a PreToolUse hold message opens with, bounded and free of
+/// control bytes, or null when the message does not name one. Caller owns it.
+fn blockHandlerLabel(alloc: Allocator, output: []const u8) Allocator.Error!?[]const u8 {
+    var parsed = std.json.parseFromSlice(std.json.Value, alloc, output, .{}) catch return null;
+    defer parsed.deinit();
+    if (parsed.value != .object) return null;
+    const error_value = parsed.value.object.get("error") orelse return null;
+    if (error_value != .object) return null;
+    const message = error_value.object.get("message") orelse return null;
+    if (message != .string) return null;
+    const end = std.mem.findScalar(u8, message.string, ':') orelse
+        std.mem.findScalar(u8, message.string, '\n') orelse return null;
+    const raw = std.mem.trim(u8, message.string[0..end], " \t\r\n");
+    if (raw.len == 0 or raw.len > 32) return null;
+    for (raw) |byte| {
+        if (byte < 0x20 or byte == 0x7f) return null;
+    }
+    return try alloc.dupe(u8, raw);
+}
+
+test "a PreToolUse hold names the blocking handler" {
+    const alloc = std.testing.allocator;
+    const output = try tool_result_errors.preToolUseBlockedJson(alloc, "edit_file", "SDD TDD: this change alters behavior, so it is test-first.");
+    defer alloc.free(output);
+    const call = ToolCall{ .id = "c1", .name = "edit_file", .arguments_json = "{}" };
+    const label = try heldRowLabel(alloc, call, output);
+    defer alloc.free(label);
+    try std.testing.expectEqualStrings("Held · SDD TDD", label);
+
+    const bare = try tool_result_errors.preToolUseBlockedJson(alloc, "edit_file", "no reason given");
+    defer alloc.free(bare);
+    try std.testing.expectEqualStrings("Held", try heldRowLabel(alloc, call, bare));
+
+    try std.testing.expectEqualStrings("Failed", try heldRowLabel(alloc, call, "{\"error\":{\"type\":\"tool_execution_failed\",\"message\":\"x\"}}"));
+}
+
 test "subagent pending result does not claim completion" {
     const alloc = std.testing.allocator;
     const call = ToolCall{ .id = "call", .name = "subagent", .arguments_json = "{\"action\":\"run\",\"task\":\"work\"}" };
