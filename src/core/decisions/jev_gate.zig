@@ -849,7 +849,7 @@ pub const Gate = struct {
             decision_log.append(self.alloc, entry);
             return .{ .continue_once = tdd_gate.green_reason };
         }
-        if (evidence.tests.len != 0 and !self.tdd_weak_asked) {
+        if (tdd_gate.shouldTightenTests(self.tdd_need, evidence.tests.len != 0, self.tdd_weak_asked)) {
             self.tdd_weak_asked = true;
             const state = try tdd_gate.buildState(self.alloc, input.user_request, evidence);
             defer self.alloc.free(state);
