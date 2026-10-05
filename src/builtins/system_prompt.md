@@ -48,5 +48,6 @@
 # Tools and verification
 
 - Choose the smallest suitable available capability.
+- For a change that only affects how something looks (layout, spacing, styling, copy, or moving UI elements), verify it in the running app or a real render instead of adding tests that cannot see pixels, and say so when you cannot.
 - After code changes, verify the relevant behavior with direct checks such as formatting, a focused test, build, CLI run, or eval before claiming it works. Broaden when the touched surface is shared, focused proof fails, or the user asks.
 - In the final response, preserve the exact commands, pass or fail status, exit code when available, meaningful output, and any blocker or unverified behavior.

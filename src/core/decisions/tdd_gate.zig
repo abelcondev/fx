@@ -315,6 +315,14 @@ pub fn meaningful(response: *const jev_contract.Response) ?bool {
     return p >= meaningful_threshold;
 }
 
+/// Whether the end-of-turn meaningful-test check applies. A `no_test` verdict
+/// (a presentation or trivial change) means the turn already owes no
+/// test-first work, so its tests are never tightened after the fact.
+pub fn shouldTightenTests(need: ?Need, tests_changed: bool, already_asked: bool) bool {
+    if (need == .no_test) return false;
+    return tests_changed and !already_asked;
+}
+
 pub const red_reason =
     "SDD TDD: this change alters behavior, so it is test-first. Before changing source files, add or update a test " ++
     "for the new behavior (cite the rule in a comment, for example `// spec: reservas › Saldo follows Asesor`), " ++
@@ -497,6 +505,17 @@ test "evaluateNeed exempts presentation and keeps unsure or testable behavior te
         defer response.deinit();
         try std.testing.expectEqual(case.want, evaluateNeed(&response));
     }
+}
+
+test "a no_test verdict never tightens tests at the end of a turn" {
+    try std.testing.expect(!shouldTightenTests(.no_test, true, false));
+    try std.testing.expect(!shouldTightenTests(.no_test, true, true));
+    try std.testing.expect(shouldTightenTests(.test_first, true, false));
+    try std.testing.expect(!shouldTightenTests(.test_first, true, true));
+    try std.testing.expect(!shouldTightenTests(.test_first, false, false));
+    // No verdict yet (the turn never asked the change-kind question) keeps the
+    // historical behavior.
+    try std.testing.expect(shouldTightenTests(null, true, false));
 }
 
 test "buildNeedState carries the request and the pending change" {

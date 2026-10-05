@@ -373,6 +373,10 @@ Después de los turnos que cambian archivos, el chequeo de drift compara el
 código con cada regla de `sdd/specs` y le pide al agente que actualice las
 reglas que el código ya contradice.
 
+Mientras programas, el turno se atribuye al cambio que nombras; si no nombras
+ninguno, al **aprobado más reciente**. Así un cambio aprobado viejo no se queda
+con turnos que no son suyos.
+
 ## TDD: primero los tests
 
 TDD es un complemento de SDD. Con él, los cambios de comportamiento (rutas spec
@@ -393,6 +397,11 @@ bugs van con test primero; los de presentación y los triviales no, pero los
 tests igual tienen que pasar después del último cambio. Si Jev no responde o
 duda, el cambio va con test primero, como en `on`. La decisión queda en el
 registro de Jev de la sesión.
+
+Un cambio de presentación no se cubre con un test: se comprueba en la app
+corriendo (o en un render real), porque ningún test ve jerarquía, aire ni
+encuadre. El agente lo trata así y no te pide tests para lo que solo cambia
+cómo se ve.
 
 ### Qué exige fx
 

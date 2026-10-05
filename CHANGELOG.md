@@ -1,8 +1,15 @@
 # fx
 
-## 0.8.0
+## 0.8.1
 
 <!-- release:start -->
+### Bug Fixes
+
+- **Presentation changes are not asked for tests:** When fx classifies a change as only how something looks, it no longer asks to tighten tests at the end of the turn. Such a change is checked in the running app instead.
+- **A turn attaches to the newest relevant change:** When a turn does not name an SDD change, fx now uses the most recently approved one instead of the oldest, so a stale approved change no longer captures unrelated work.
+<!-- release:end -->
+
+## 0.8.0
 
 **fx no longer checks the interface with Iris.**
 

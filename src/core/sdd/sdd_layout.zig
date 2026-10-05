@@ -210,12 +210,14 @@ fn matchesName(file: []const u8, wanted: []const u8) bool {
     return stem.len > 11 and stem[10] == '-' and std.mem.eql(u8, stem[11..], wanted);
 }
 
-/// The first change in `status`, if any.
-pub fn firstWithStatus(changes: []const Change, status: Status) ?Change {
+/// The newest change in `status`, if any. `listChanges` sorts by file name
+/// (oldest first), so the last match is the newest.
+pub fn newestWithStatus(changes: []const Change, status: Status) ?Change {
+    var found: ?Change = null;
     for (changes) |change| {
-        if (change.status == status) return change;
+        if (change.status == status) found = change;
     }
-    return null;
+    return found;
 }
 
 /// The proposal a conversation is about: the first text in `context`
@@ -231,9 +233,11 @@ pub fn pendingProposal(changes: []const Change, context: []const []const u8) ?Ch
 }
 
 /// The approved change a turn is about: the first text in `context` that
-/// names one picks it; otherwise the first approved change.
+/// names one picks it; otherwise the newest approved change. Falling back to
+/// the newest, not the oldest, keeps a stale approved change from capturing an
+/// unrelated turn.
 pub fn activeChange(changes: []const Change, context: []const []const u8) ?Change {
-    return named(changes, .approved, context) orelse firstWithStatus(changes, .approved);
+    return named(changes, .approved, context) orelse newestWithStatus(changes, .approved);
 }
 
 fn named(changes: []const Change, status: Status, context: []const []const u8) ?Change {
@@ -475,8 +479,12 @@ test "activeChange prefers the approved change the turn names" {
         parseChange("2026-09-29-trenes-step.md", "---\nstatus: approved\n---\n"),
         parseChange("2026-09-30-otro.md", "---\nstatus: proposed\n---\n"),
     };
+    // Naming wins even when the named change is older than another approved one.
+    try std.testing.expectEqualStrings("2026-09-28-pagos-step.md", activeChange(&changes, &.{"seguimos con pagos-step"}).?.file);
     try std.testing.expectEqualStrings("2026-09-29-trenes-step.md", activeChange(&changes, &.{ "implementá", "{\"path\":\"sdd/changes/2026-09-29-trenes-step.md\"}" }).?.file);
-    try std.testing.expectEqualStrings("2026-09-28-pagos-step.md", activeChange(&changes, &.{"implementá"}).?.file);
+    // Nothing named: the newest approved change wins, not the oldest, so a
+    // stale approved change cannot capture an unrelated turn.
+    try std.testing.expectEqualStrings("2026-09-29-trenes-step.md", activeChange(&changes, &.{"implementá"}).?.file);
     try std.testing.expect(activeChange(changes[2..], &.{"otro"}) == null);
 }
 
