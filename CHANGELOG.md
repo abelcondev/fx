@@ -21,7 +21,6 @@
 
 - **Presentation changes are not asked for tests:** When fx classifies a change as only how something looks, it no longer asks to tighten tests at the end of the turn. Such a change is checked in the running app instead.
 - **A turn attaches to the newest relevant change:** When a turn does not name an SDD change, fx now uses the most recently approved one instead of the oldest, so a stale approved change no longer captures unrelated work.
-<!-- release:end -->
 
 ## 0.8.0
 
@@ -30,7 +29,6 @@
 ### Breaking Changes
 
 - **No more Iris visual check:** The after-turn screenshot check is gone, along with the `jev.gates.visual` and `jev.visual.model` settings and the per-project `workspaces["<path>"].iris` switch. `fx jev iris on|off`, `/jev iris on|off` and `fx jev eval visual` are no longer accepted, and `fx jev full` now adds only the plan and drift checks. Settings that still carry the old keys keep working; fx ignores them.
-<!-- release:end -->
 
 ## 0.7.0
 
