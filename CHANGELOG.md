@@ -1,8 +1,22 @@
 # fx
 
-## 0.8.1
+## 0.8.2
 
 <!-- release:start -->
+### Bug Fixes
+
+- **A held change names the gate and the file:** a tool call a gate held now reads `Held · SDD TDD` with the file it was about to touch, instead of only the word for the kind of target.
+- **A memory note can no longer outrank the configuration:** fx now also checks facts that are edited in place, and holds a fact that records how fx itself behaves or whether a mode, gate or feature is on. The effective configuration is the only source for that.
+- **The gate says what is still allowed while it holds a change:** the test-first hold now states that writing the spec or the change doc first is fine, and that a test reading source files as text for strings or class names does not cover behavior.
+
+### Improvements
+
+- **fx states the effective SDD/TDD mode every turn:** each turn carries one line with the workspace's live SDD and TDD mode, what that mode asks for (test-first for behavior, the running app for presentation), and that the configuration wins over any memory fact.
+- **Memory guidance names what each fact is worth:** `feedback` facts are how the user wants you to work and are followed unless the current request says otherwise; the other kinds stay background to verify before relying on them.
+<!-- release:end -->
+
+## 0.8.1
+
 ### Bug Fixes
 
 - **Presentation changes are not asked for tests:** When fx classifies a change as only how something looks, it no longer asks to tighten tests at the end of the turn. Such a change is checked in the running app instead.

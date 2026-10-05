@@ -2979,6 +2979,34 @@ fn permissionModeContext(permission_mode: types.PermissionMode) []const u8 {
     };
 }
 
+/// The workspace's effective SDD/TDD configuration, stated every turn so the
+/// model reads it instead of remembering how fx behaved in an earlier
+/// conversation. The closing sentence is the precedence rule: the effective
+/// configuration wins over a memory fact that claims otherwise.
+fn sddContext(arena: Allocator, sdd: context_contract.SddContext) ![]const u8 {
+    if (!sdd.enabled) {
+        return std.fmt.allocPrint(
+            arena,
+            "Runtime context: SDD is off for this workspace ({s}). fx does not require a change record, test-first work or an end-of-turn test run here. This is the effective configuration and it wins over any memory fact about how fx behaves.",
+            .{sdd.source},
+        );
+    }
+    const policy =
+        if (std.mem.eql(u8, sdd.tdd, "auto"))
+            "tdd is auto: before your first source change, judge the request. Behavior changes and bug fixes are test-first — write or update the test first and show it failing for the right reason, then change the code. Presentation and trivial changes are not asked for new tests: check them in the running app instead."
+        else if (std.mem.eql(u8, sdd.tdd, "strict"))
+            "tdd is strict: every behavior change is test-first, and each spec rule the change touches must be cited by a test."
+        else if (std.mem.eql(u8, sdd.tdd, "on"))
+            "tdd is on: every behavior change is test-first — a failing test first, then the code."
+        else
+            "tdd is off: a behavior change is not required to be test-first, but the project's tests must pass after your last source change.";
+    return std.fmt.allocPrint(
+        arena,
+        "Runtime context: SDD is on for this workspace ({s}). {s} Writing or updating the spec and the change doc first is always allowed; files under `sdd/` are not source. A test that reads source files as text looking for strings, class names or identifiers does not cover behavior and does not count. This is the effective configuration; it wins over any memory fact about how fx behaves.",
+        .{ sdd.source, policy },
+    );
+}
+
 const stale_shell_handles_context =
     "Runtime context: fx restarted since this session was last active, so earlier shell session_id handles no longer exist; stopping or interacting with them fails with ExecutionNotFound. Their processes are normally terminated when fx exits but can survive an unclean exit, so check for a survivor before starting a duplicate. Otherwise start fresh shell sessions instead of reusing earlier handles.";
 
@@ -2999,6 +3027,9 @@ fn appendTransient(input: TransientContextInput, arena: Allocator, messages: *st
     try messages.append(arena, .{ .role = .system, .content = content });
     try appendWorkspaceAccessContext(input.access_scope, arena, messages);
     try messages.append(arena, .{ .role = .system, .content = permissionModeContext(input.permission_mode) });
+    if (input.sdd) |sdd| {
+        try messages.append(arena, .{ .role = .system, .content = try sddContext(arena, sdd) });
+    }
     // Unit tests never read or create the user's profile memory.
     if (!builtin.is_test) {
         if (io_mod.getenv("HOME")) |home| {
@@ -3123,6 +3154,67 @@ test "runtime context composes exact auto mode with noninteractive blockers" {
         "Runtime context: permission mode is auto. After configured rules, session grants, and deterministic safe-tool authority, fx sends each unresolved action to a narrow safety reviewer. A clear result authorizes only that exact action. A caution or unavailable result holds only that action and returns advice without opening a permission screen, disabling tools, or ending the turn. Exact cautions are reused for this turn; choose a materially different safe action or explain why no safe path remains. Tool admission and exact live revalidation remain authoritative.",
         messages.items[1].content.?,
     );
+}
+
+fn findContextMessage(messages: []const ChatMessage, needle: []const u8) ?[]const u8 {
+    for (messages) |msg| {
+        if (msg.content) |content| {
+            if (std.mem.find(u8, content, needle) != null) return content;
+        }
+    }
+    return null;
+}
+
+test "runtime context states the effective sdd and tdd mode" {
+    var rt = PromptContextFixture{};
+    defer rt.deinit(std.testing.allocator);
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var input = rt.transientInput();
+    input.sdd = .{ .enabled = true, .tdd = "auto", .source = "workspace setting" };
+    var messages: std.ArrayList(ChatMessage) = .empty;
+    try appendTransient(input, arena, &messages);
+
+    const line = findContextMessage(messages.items, "SDD is on for this workspace").?;
+    try expectContains(line, "SDD is on for this workspace (workspace setting)");
+    try expectContains(line, "tdd is auto");
+    try expectContains(line, "Behavior changes and bug fixes are test-first");
+    try expectContains(line, "Presentation and trivial changes are not asked for new tests");
+    try expectContains(line, "files under `sdd/` are not source");
+    try expectContains(line, "does not cover behavior and does not count");
+    try expectContains(line, "it wins over any memory fact about how fx behaves");
+}
+
+test "runtime context says sdd is off and that configuration wins" {
+    var rt = PromptContextFixture{};
+    defer rt.deinit(std.testing.allocator);
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var input = rt.transientInput();
+    input.sdd = .{ .enabled = false, .tdd = "off", .source = "default" };
+    var messages: std.ArrayList(ChatMessage) = .empty;
+    try appendTransient(input, arena, &messages);
+
+    const line = findContextMessage(messages.items, "SDD is off for this workspace").?;
+    try expectContains(line, "SDD is off for this workspace (default)");
+    try expectContains(line, "does not require a change record, test-first work or an end-of-turn test run");
+    try expectContains(line, "it wins over any memory fact about how fx behaves");
+}
+
+test "runtime context omits the sdd line when the caller did not resolve it" {
+    var rt = PromptContextFixture{};
+    defer rt.deinit(std.testing.allocator);
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var messages: std.ArrayList(ChatMessage) = .empty;
+    try appendTransient(rt.transientInput(), arena, &messages);
+    try std.testing.expect(findContextMessage(messages.items, "SDD is ") == null);
 }
 
 test "runtime context lists active added roots without treating them as instructions" {

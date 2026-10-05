@@ -4541,7 +4541,7 @@ pub fn Runtime(comptime App: type) type {
                 action_arena.allocator(),
                 call,
                 session_target,
-                try tooling_presentation.subagentFailureLabel(action_arena.allocator(), call, result.output),
+                try tooling_presentation.heldRowLabel(action_arena.allocator(), call, result.output),
                 &.{},
             );
             const formatted_action = if (outcome_decision) |decision|

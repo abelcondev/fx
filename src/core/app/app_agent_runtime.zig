@@ -904,6 +904,9 @@ pub fn Runtime(comptime App: type) type {
                     appAccessScope(app),
                 .interactive = true,
                 .permission_mode = permission_snapshot.mode,
+                // The model reads the live mode here instead of remembering how
+                // fx behaved in an earlier conversation.
+                .sdd = context_contract.sddContextFor(arena, workspace_root),
                 .stale_shell_handles = app.session.has_stale_shell_handles,
             }, arena, messages);
         }
@@ -1380,10 +1383,20 @@ fn formatToolAction(
     if (std.mem.eql(u8, call.name, "write_file") or
         std.mem.eql(u8, call.name, "edit_file"))
     {
+        // A held or denied call never got a prepared display target. Without
+        // reading the argument here, a blocked edit read only "Held file" with
+        // no file in it.
+        const target = target: {
+            if (display_target) |value| break :target value;
+            const args = tool_args.parseToolArgsObject(arena, call.arguments_json) catch
+                break :target spec.label_arg_default;
+            const presentation = tool_dispatch.presentationForArgs(spec.*, args);
+            break :target tool_dispatch.presentationLabelValue(presentation, args) orelse presentation.label_arg_default;
+        };
         return formatToolActionValue(
             arena,
             specLabel(spec, state, denied_label),
-            display_target orelse spec.label_arg_default,
+            target,
         );
     }
     if (try tool_presentation.subagentAction(arena, call, switch (state) {

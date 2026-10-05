@@ -31,6 +31,7 @@ import {
   type GatewayRequest,
 } from "./conditional-guidance-oracle";
 import { expectPermissionModeContext } from "./permission-mode-context";
+import { expectSddContext } from "./sdd-mode-context";
 import { stdoutFrames } from "./render-lab/tape";
 import {
   fakeGatewayFinalText,
@@ -1596,6 +1597,47 @@ describe("gateway stream lifecycle", () => {
         gateway.stop();
         rmSync(root.root, { recursive: true, force: true });
       }
+    }
+  }, 60_000);
+
+  test("the request states the effective sdd and tdd mode", async () => {
+    const root = createFixtureRoot("sdd-mode-context");
+    const tracePath = join(root.root, "trace.log");
+    const gateway = startGateway(() => fakeGatewayFinalText("SDD_CONTEXT_COMPLETE"));
+
+    try {
+      // The fixture ships empty settings, so SDD is off and no gate runs.
+      const off = await runFx(["ask", "--json", "--auto", "--no-save", "Say hi."], {
+        cwd: root.workspace,
+        env: fixtureEnv(root, gateway, tracePath),
+        timeoutMs: 30_000,
+      });
+      expect(off.code).toBe(0);
+      expect(gateway.requests).toHaveLength(1);
+      expectSddContext(gateway.requests[0]!.body, { enabled: false, source: "default" });
+
+      // Now the workspace turns SDD on with tdd auto: the model must read that
+      // instead of remembering an older mode from a previous conversation.
+      writeFileSync(
+        join(root.home, ".fx", "settings.json"),
+        JSON.stringify({
+          workspaces: { [root.workspace]: { sdd: { enabled: true, tdd: "auto" } } },
+        }),
+      );
+      await runFx(["ask", "--json", "--auto", "--no-save", "Say hi again."], {
+        cwd: root.workspace,
+        env: fixtureEnv(root, gateway, tracePath),
+        timeoutMs: 30_000,
+      });
+      expect(gateway.requests.length).toBeGreaterThanOrEqual(2);
+      expectSddContext(gateway.requests[1]!.body, {
+        enabled: true,
+        tdd: "auto",
+        source: "workspace setting",
+      });
+    } finally {
+      gateway.stop();
+      rmSync(root.root, { recursive: true, force: true });
     }
   }, 60_000);
 

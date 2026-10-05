@@ -81,3 +81,29 @@ test "check notes a green claim with no run after the last change" {
     const read_only = toolPair("c1", "read_file", "{\"path\":\"src/calc.ts\"}", .success, "x");
     try std.testing.expect((try check(arena, "The tests pass on main.", &read_only, "/repo", null)) == null);
 }
+
+test "a turn that only writes memory outside the workspace does not ask for a run" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // The note that a fact cannot outrank the configuration is a memory file
+    // outside the workspace: it is not a source change, so a green claim with
+    // no run after it is already backed.
+    const memory_write = toolPair(
+        "c1",
+        "edit_file",
+        "{\"path\":\"/Users/a/.fx/memory/-repo/sdd-tdd.md\"}",
+        .success,
+        "Edited",
+    );
+    try std.testing.expect((try check(arena, "Listo: 434 pass / 0 fail.", &memory_write, "/repo", null)) == null);
+
+    const change_doc = toolPair(
+        "c1",
+        "edit_file",
+        "{\"path\":\"/repo/sdd/changes/2026-10-05-x.md\"}",
+        .success,
+        "Edited",
+    );
+    try std.testing.expect((try check(arena, "Listo: 434 pass / 0 fail.", &change_doc, "/repo", null)) == null);
+}

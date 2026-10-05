@@ -1,6 +1,7 @@
 const std = @import("std");
 const types = @import("../shared/types.zig");
 const context_limits = @import("../config/context_limits.zig");
+const sdd_mode = @import("../sdd/sdd_mode.zig");
 const workspace_access = @import("workspace_access.zig");
 
 const Allocator = std.mem.Allocator;
@@ -245,16 +246,42 @@ pub const HostWorkspaceContext = struct {
     home: []const u8,
 };
 
+/// The workspace's effective spec-driven-development configuration, resolved by
+/// the caller so the model reads the live configuration instead of remembering
+/// it. Kept free of the `sdd_mode` import: the caller stringifies the mode.
+pub const SddContext = struct {
+    enabled: bool,
+    /// `off`, `auto`, `on` or `strict`.
+    tdd: []const u8 = "off",
+    /// Where `enabled` came from: `default`, `profile setting`,
+    /// `workspace setting` or `FX_SDD`.
+    source: []const u8 = "default",
+};
+
 pub const TransientContextInput = struct {
     workspace_root: []const u8,
     host_workspace: ?HostWorkspaceContext = null,
     access_scope: ?workspace_access.AccessScope = null,
     interactive: bool,
     permission_mode: types.PermissionMode,
+    /// The workspace's effective SDD/TDD configuration. Null when the caller
+    /// did not resolve it, in which case no line is added.
+    sdd: ?SddContext = null,
     /// True when the resumed session history references shell execution handles
     /// the current process does not own; the model must not reuse them.
     stale_shell_handles: bool = false,
 };
+
+/// Resolves the workspace's SDD/TDD state from the profile settings, for every
+/// entry point that builds the transient context. Allocated in `arena`.
+pub fn sddContextFor(arena: Allocator, workspace_root: []const u8) SddContext {
+    const mode = sdd_mode.load(arena, workspace_root);
+    return .{
+        .enabled = mode.enabled,
+        .tdd = @tagName(mode.tdd),
+        .source = mode.source.label(),
+    };
+}
 
 pub const Provider = struct {
     id: []const u8,

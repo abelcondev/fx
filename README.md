@@ -403,6 +403,17 @@ corriendo (o en un render real), porque ningún test ve jerarquía, aire ni
 encuadre. El agente lo trata así y no te pide tests para lo que solo cambia
 cómo se ve.
 
+Cada turno lleva una línea con el modo efectivo de SDD y TDD de este workspace,
+para que el agente lo lea de la configuración en vez de recordarlo de una
+conversación anterior: si SDD está apagado, si TDD está en `auto`, `on` o
+`strict`, qué pide ese modo, y que esta configuración manda sobre cualquier hecho
+de memoria que diga lo contrario. Mientras un cambio está frenado, el transcript
+muestra la etiqueta `Held · <gate>` con el archivo que el cambio iba a tocar (por
+ejemplo `Held · SDD TDD src/lib/saldo.ts`), y el mensaje del freno aclara que
+escribir primero la spec o el change doc está permitido (los archivos bajo `sdd/`
+no son código) y que un test que lee el código como texto buscando strings o
+nombres de clases no cubre comportamiento.
+
 ### Qué exige fx
 
 ```
@@ -446,9 +457,19 @@ es relevante.
 - **Qué se guarda:** quién eres y tus preferencias (`user`), cómo quieres que
   trabaje (`feedback`), objetivos y restricciones en curso (`project`) y
   referencias externas (`reference`). Nada que el repo o git ya registren.
+- **Qué manda cada tipo:** los hechos `feedback` son cómo quieres que trabaje y
+  se siguen salvo que el pedido actual diga otra cosa. Los otros son fondo: el
+  agente comprueba que el archivo, la función o el flag que nombran sigan
+  existiendo antes de apoyarse en ellos.
+- **Lo que no se guarda:** cómo se comporta fx ni si un modo, gate o función está
+  prendido o apagado. Eso lo registra la configuración y cambia entre versiones,
+  así que un hecho así nace viejo y termina contradiciendo a la configuración. Si
+  un hecho contradice la configuración, gana la configuración y el hecho se
+  corrige o se borra.
 - **Jev filtra:** antes de escribir un hecho nuevo, Jev decide si sirve a futuro y no se deduce del
   repo, y si repite una entrada del índice. En ese caso el agente actualiza la
-  existente.
+  existente. También revisa las ediciones de un hecho ya guardado, que es por
+  donde se colaba una nota vieja sobre el arnés.
 - **Permisos:** son archivos de tu perfil fuera del workspace; `write_file` y
   `edit_file` los escriben con la política de permisos normal.
 - **Apagarla:** `"memory": { "enabled": false }` en `~/.fx/settings.json`, o
@@ -542,7 +563,7 @@ Dentro de `jev` en `~/.fx/settings.json`:
 | `gates.drift` | Marca registros de decisiones que el cambio contradice (`false` en `lite`, `true` en `full`) |
 | `gates.sdd` | Con SDD activo, clasifica el primer cambio como fix, spec o change (por defecto `true`) |
 | `gates.edits` | Frena ediciones puntuales hechas con scripts para usar `edit_file` (por defecto `true`) |
-| `gates.memory` | Revisa que un hecho nuevo de memoria valga la pena y no repita otro (por defecto `true`) |
+| `gates.memory` | Revisa que un hecho de memoria valga la pena, no repita otro y no registre cómo se comporta fx o si un modo está prendido; también al editar un hecho existente (por defecto `true`) |
 | `gates.action` | Revisa cambios de archivos y comandos de shell (por defecto `false`) |
 | `thresholds.ask` | Confianza y respaldo mínimos para responder (por defecto `0.8`) |
 | `thresholds.plan` | Probabilidad mínima que deben alcanzar los chequeos del plan (por defecto `0.5`) |

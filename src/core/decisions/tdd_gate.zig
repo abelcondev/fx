@@ -138,7 +138,10 @@ pub fn scan(arena: Allocator, messages: []const ChatMessage, workspace_root: []c
                     try tests.append(arena, path);
                     try test_changes.append(arena, call.arguments_json);
                 }
-            } else {
+            } else if (isSourceChange(workspace_root, path)) {
+                // A file outside the workspace (a memory fact, a scratch file)
+                // is not source: counting it demanded a test run and a green
+                // claim for a turn that changed no code.
                 if (sources.count() < Limits.max_paths) try sources.put(arena, path, {});
                 evidence.source_changed = true;
                 evidence.green = false;
@@ -161,7 +164,7 @@ pub fn scan(arena: Allocator, messages: []const ChatMessage, workspace_root: []c
         }
     }
     if (pending) |change| {
-        if (!sdd_layout.isSddPath(workspace_root, change.path) and !isTestPath(change.path)) {
+        if (isSourceChange(workspace_root, change.path)) {
             if (sources.count() < Limits.max_paths) try sources.put(arena, change.path, {});
         }
     }
@@ -328,6 +331,9 @@ pub const red_reason =
     "for the new behavior (cite the rule in a comment, for example `// spec: reservas › Saldo follows Asesor`), " ++
     "run it with the project's test command (directly, without piping it through tail or grep, so its exit status " ++
     "shows the failure), and show that it fails for the right reason. Then change the code. " ++
+    "Writing or updating the spec and the change doc first is allowed: files under `sdd/` are not source. " ++
+    "A test that reads source files as text looking for strings, class names or identifiers does not cover behavior; " ++
+    "test the function or the rendered result instead. " ++
     "If the behavior cannot be unit tested (a purely visual change), say so, mark the rule heading `(manual)` in its " ++
     "spec (or add `tdd: manual` to the change's front matter), and continue.";
 
